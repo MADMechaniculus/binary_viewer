@@ -12,18 +12,15 @@ QMAKE_CFLAGS += "-static-libgcc"
 QMAKE_CXXFLAGS += "-static-libstdc++"
 
 SOURCES += \
-#    consolewindow.cpp \
     main.cpp \
     mainwindow.cpp \
     qcustomplot.cpp
 
 HEADERS += \
-#    consolewindow.h \
     mainwindow.h \
     qcustomplot.h
 
 FORMS += \
-#    consolewindow.ui \
     mainwindow.ui
 
 RESOURCES += \
@@ -31,11 +28,9 @@ RESOURCES += \
     themes.qrc
 
 INCLUDEPATH += \
-    "D:\Qtprojects\libsignal_analyzer"
 
 LIBS += \
-    -L"D:\Qtprojects\libsignal_analyzer\builds\Desktop_Qt_5_12_9_MinGW_32_bit-Debug\debug" \
-#    -lpsm
+    -lpthread
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

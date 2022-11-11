@@ -1,10 +1,6 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
-// Отладочные форматы вывода спектрограммы и осциллограммы
-//#define SIMPLE
-//#define DOUBLE
-
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -16,11 +12,8 @@ MainWindow::MainWindow(QWidget *parent)
     this->ui->pushButton_2->setStyleSheet(QString("QPushButton { background-color : ") + (this->scrollHorizontal ? "yellow; color : black; }" : "red; color : white; }"));
     this->ui->pushButton_3->setStyleSheet(QString("QPushButton { background-color : ") + (this->scrollVertical ? "yellow; color : black; }" : "red; color : white; }"));
 
-    //    this->console = new ConsoleWindow(this);
-
-    //    connect(this, &MainWindow::printToConsole, this->console, &ConsoleWindow::appendConsole);
-
-    //    this->console->show();
+    newGraphDialog = new AddNewGraphDialog(this);
+    newGraphDialog->show();
 }
 
 MainWindow::~MainWindow()
@@ -94,8 +87,8 @@ bool MainWindow::replotRAW()
         QVector<CPLX> rawData(fileInfo.size() / sizeof (CPLX));
         QVector<double> indexes(fileInfo.size() / sizeof (CPLX));
 #else
-        QVector<IQ_t> rawData(fileInfo.size() / sizeof (IQ_t));
-        QVector<double> indexes(fileInfo.size() / sizeof (IQ_t));
+        QVector<IQ_t> rawData(fileInfo.size()  / sizeof (IQ_t));
+        QVector<double> indexes(fileInfo.size()  / sizeof (IQ_t));
 #endif
 
         QVector<double> yAxis_i(rawData.size()), yAxis_q(rawData.size());
@@ -104,7 +97,7 @@ bool MainWindow::replotRAW()
 
         if (fft_input.is_open()) {
 
-            fft_input.read((char*)rawData.data(), fileInfo.size());
+            fft_input.read((char*)rawData.data(), (fileInfo.size() / 4));
 
             for (size_t i = 0; i < (size_t)rawData.size(); i++) {
                 indexes[i] = i;
@@ -214,6 +207,44 @@ bool MainWindow::replotQRAW()
     return false;
 }
 
+void MainWindow::replotFFTslot(QVector<uint32_t> fft)
+{
+    if (fftReplotter == false) {
+        this->ui->plotter->clearGraphs();
+    }
+
+    this->ui->plotter->addGraph();
+    QVector<double> yAxis(fft.size());
+    QVector<double> xAxis(fft.size());
+
+    std::transform(std::begin(fft), std::end(fft), std::begin(yAxis), [](uint32_t item) {
+        return 20.0 * std::log((double)item);
+    });
+
+    double index = 0;
+    auto getIndex = [&index](double & item) {
+        item = index++;
+    };
+    std::for_each(std::begin(xAxis), std::end(xAxis), getIndex);
+
+    this->ui->plotter->graph(0)->setData(xAxis, yAxis);
+    this->ui->plotter->graph(0)->setPen(QPen(Qt::blue));
+
+    this->ui->plotter->xAxis2->setVisible(true);
+    this->ui->plotter->xAxis2->setTickLabels(false);
+    this->ui->plotter->yAxis2->setVisible(true);
+    this->ui->plotter->yAxis2->setTickLabels(false);
+
+    if (fftReplotter == false) {
+        this->ui->plotter->xAxis->setRange(0, (xAxis.size() < (32 * 1024)) ? xAxis.last() : (double)(32 * 1024));
+        this->ui->plotter->yAxis->setRange(*std::min_element(yAxis.begin(), yAxis.end()), \
+                                           *std::max_element(yAxis.begin(), yAxis.end()));
+        fftReplotter = true;
+    }
+
+    this->ui->plotter->replot();
+}
+
 bool MainWindow::replotRawFloat() {
     if (!this->filePath.isEmpty()) {
         this->ui->plotter->clearGraphs();
@@ -306,12 +337,284 @@ bool MainWindow::replotRawDouble() {
     return false;
 }
 
+bool MainWindow::replotRawFPlusIQ() {
+    if (!this->filePath.isEmpty()) {
+        this->ui->plotter->clearGraphs();
+
+        QFileInfo fileInfo(filePath);
+        uint32_t vectorSize;
+
+        std::ifstream inputFileStream(filePath.toStdString(), std::ios::binary);
+
+        if (inputFileStream.is_open()) {
+
+            inputFileStream.read((char*)&vectorSize, sizeof(uint32_t));
+
+            QVector<float> dataFBuffer(vectorSize);
+            QVector<IQ_t> dataIQBuffer(vectorSize);
+
+            QVector<double> yFAxis(dataFBuffer.size());
+            QVector<double> yIAxis(dataFBuffer.size());
+            QVector<double> yQAxis(dataFBuffer.size());
+            QVector<double> xAxis(dataFBuffer.size());
+
+            double index = 0;
+            auto getIndex = [&index](double & item) {
+                item = index++;
+            };
+
+            inputFileStream.read((char*)dataFBuffer.data(), dataFBuffer.size() * sizeof(float));
+            inputFileStream.read((char*)dataIQBuffer.data(), dataIQBuffer.size() * sizeof(IQ_t));
+
+            std::for_each(std::begin(xAxis), std::end(xAxis), getIndex);
+
+            std::transform(std::begin(dataFBuffer), std::end(dataFBuffer), std::begin(yFAxis), [](const float & item) {
+                return (double)item;
+            });
+
+            QVector<double>::iterator Iitr = std::begin(yIAxis);
+            QVector<double>::iterator Qitr = std::begin(yQAxis);
+            for (const IQ_t & item : dataIQBuffer) {
+                *Iitr = (double)item.I;
+                *Qitr = (double)item.Q;
+
+                Iitr++;
+                Qitr++;
+            }
+
+            this->ui->plotter->addGraph();
+            this->ui->plotter->addGraph();
+            this->ui->plotter->addGraph();
+            this->ui->plotter->graph(0)->setData(xAxis, yFAxis);
+            this->ui->plotter->graph(1)->setData(xAxis, yIAxis);
+            this->ui->plotter->graph(2)->setData(xAxis, yQAxis);
+
+            this->ui->plotter->graph(0)->setPen(QPen(Qt::red));
+            this->ui->plotter->graph(1)->setPen(QPen(Qt::blue));
+            this->ui->plotter->graph(2)->setPen(QPen(Qt::yellow));
+
+            this->ui->plotter->xAxis2->setVisible(true);
+            this->ui->plotter->xAxis2->setTickLabels(false);
+            this->ui->plotter->yAxis2->setVisible(true);
+            this->ui->plotter->yAxis2->setTickLabels(false);
+
+            this->ui->plotter->xAxis->setRange(0, (xAxis.size() < (32 * 1024)) ? xAxis.last() : (double)(32 * 1024));
+            this->ui->plotter->yAxis->setRange(*std::min_element(dataFBuffer.begin(), dataFBuffer.end()), \
+                                               *std::max_element(dataFBuffer.begin(), dataFBuffer.end()));
+
+        } else {
+            return false;
+        }
+
+        return true;
+    }
+    return false;
+}
+
+bool MainWindow::replotRawFloatIQ() {
+    if (!this->filePath.isEmpty()) {
+        this->ui->plotter->clearGraphs();
+
+        QFileInfo fileInfo(filePath);
+
+        typedef struct {
+            float I;
+            float Q;
+        } fIQ_t;
+
+        QVector<fIQ_t> dataBuffer(fileInfo.size() / sizeof(fIQ_t));
+        QVector<double> yIAxis(dataBuffer.size());
+        QVector<double> yQAxis(dataBuffer.size());
+        QVector<double> xAxis(dataBuffer.size());
+
+        std::ifstream inputFileStream(filePath.toStdString(), std::ios::binary);
+
+        if (inputFileStream.is_open()) {
+
+            double index = 0;
+            auto getIndex = [&index](double & item) {
+                item = index++;
+            };
+
+            inputFileStream.read((char*)dataBuffer.data(), dataBuffer.size() * sizeof(double));
+
+            std::for_each(std::begin(xAxis), std::end(xAxis), getIndex);
+
+            QVector<double>::iterator Iitr = std::begin(yIAxis);
+            QVector<double>::iterator Qitr = std::begin(yQAxis);
+            for (const fIQ_t & item : dataBuffer) {
+                *Iitr = (double)item.I;
+                *Qitr = (double)item.Q;
+
+                Iitr++;
+                Qitr++;
+            }
+
+            this->ui->plotter->addGraph();
+            this->ui->plotter->addGraph();
+            this->ui->plotter->graph(0)->setData(xAxis, yIAxis);
+            this->ui->plotter->graph(1)->setData(xAxis, yQAxis);
+
+            this->ui->plotter->graph(0)->setPen(QPen(Qt::blue));
+            this->ui->plotter->graph(1)->setPen(QPen(Qt::red));
+
+            this->ui->plotter->xAxis2->setVisible(true);
+            this->ui->plotter->xAxis2->setTickLabels(false);
+            this->ui->plotter->yAxis2->setVisible(true);
+            this->ui->plotter->yAxis2->setTickLabels(false);
+
+            this->ui->plotter->xAxis->setRange(0, (xAxis.size() < (32 * 1024)) ? xAxis.last() : (double)(32 * 1024));
+            this->ui->plotter->yAxis->setRange(*std::min_element(yIAxis.begin(), yIAxis.end()), \
+                                               *std::max_element(yIAxis.begin(), yIAxis.end()));
+
+        } else {
+            return false;
+        }
+
+        return true;
+    }
+    return false;
+}
+
+bool MainWindow::replotSourceDirIQ() {
+    if (!this->filePath.isEmpty()) {
+        this->ui->plotter->clearGraphs();
+
+        QFileInfo fileInfo(filePath);
+
+        typedef struct {
+            float I;
+            float Q;
+        } fIQ_t;
+
+        std::ifstream inputFileStream(filePath.toStdString(), std::ios::binary);
+
+        if (inputFileStream.is_open()) {
+
+            uint32_t vecSize = 0;
+            inputFileStream.read((char*)&vecSize, sizeof (uint32_t));
+
+            QVector<float> sourceSignal(vecSize);
+            QVector<float> diffSignal(vecSize);
+            QVector<double> xAxis(vecSize);
+
+            QVector<double> yIIAxis(vecSize);
+            QVector<double> yFIAxis(vecSize);
+
+            double index = 0;
+            auto getIndex = [&index](double & item) {
+                item = index++;
+            };
+
+            inputFileStream.read((char*)sourceSignal.data(), sourceSignal.size() * sizeof(float));
+            inputFileStream.read((char*)diffSignal.data(), diffSignal.size() * sizeof(float));
+
+            std::for_each(std::begin(xAxis), std::end(xAxis), getIndex);
+
+            QVector<double>::iterator Iitr = std::begin(yIIAxis);
+            for (const float & item : sourceSignal) {
+                *Iitr = (double)item;
+
+                Iitr++;
+            }
+
+            QVector<double>::iterator fIitr = std::begin(yFIAxis);
+            for (const float & item : diffSignal) {
+                *fIitr = (double)item;
+
+                fIitr++;
+            }
+
+            this->ui->plotter->addGraph();
+            this->ui->plotter->addGraph();
+
+            this->ui->plotter->graph(0)->setData(xAxis, yIIAxis);
+            this->ui->plotter->graph(1)->setData(xAxis, yFIAxis);
+
+            this->ui->plotter->graph(0)->setPen(QPen(Qt::blue));
+            this->ui->plotter->graph(1)->setPen(QPen(Qt::red));
+
+            this->ui->plotter->xAxis2->setVisible(true);
+            this->ui->plotter->xAxis2->setTickLabels(false);
+            this->ui->plotter->yAxis2->setVisible(true);
+            this->ui->plotter->yAxis2->setTickLabels(false);
+
+            this->ui->plotter->xAxis->setRange(0, (xAxis.size() < (32 * 1024)) ? xAxis.last() : (double)(32 * 1024));
+            this->ui->plotter->yAxis->setRange(*std::min_element(yFIAxis.begin(), yFIAxis.end()), \
+                                               *std::max_element(yFIAxis.begin(), yFIAxis.end()));
+
+        } else {
+            return false;
+        }
+
+        return true;
+    }
+    return false;
+}
+
+bool MainWindow::replotUInt32()
+{
+    if (!this->filePath.isEmpty()) {
+        this->ui->plotter->clearGraphs();
+
+        QFileInfo fileInfo(filePath);
+
+        std::ifstream inputFileStream(filePath.toStdString(), std::ios::binary);
+
+        if (inputFileStream.is_open()) {
+
+            uint32_t vecSize = fileInfo.size() / sizeof (uint32_t);
+
+            QVector<uint32_t> sourceSignal(vecSize);
+            QVector<double> xAxis(vecSize);
+            QVector<double> yAxis(vecSize);
+
+            double index = 0;
+            auto getIndex = [&index](double & item) {
+                item = index++;
+            };
+
+            inputFileStream.read((char*)sourceSignal.data(), sourceSignal.size() * sizeof (uint32_t));
+
+            std::for_each(std::begin(xAxis), std::end(xAxis), getIndex);
+
+            QVector<double>::iterator Iitr = std::begin(yAxis);
+            for (const uint32_t & item : sourceSignal) {
+                *Iitr = (double)item;
+                Iitr++;
+            }
+
+            this->ui->plotter->addGraph();
+            this->ui->plotter->addGraph();
+
+            this->ui->plotter->graph(0)->setData(xAxis, yAxis);
+
+            this->ui->plotter->graph(0)->setPen(QPen(Qt::blue));
+
+            this->ui->plotter->xAxis2->setVisible(true);
+            this->ui->plotter->xAxis2->setTickLabels(false);
+            this->ui->plotter->yAxis2->setVisible(true);
+            this->ui->plotter->yAxis2->setTickLabels(false);
+
+            this->ui->plotter->xAxis->setRange(0, (xAxis.size() < (32 * 1024)) ? xAxis.last() : (double)(32 * 1024));
+            this->ui->plotter->yAxis->setRange(*std::min_element(yAxis.begin(), yAxis.end()), \
+                                               *std::max_element(yAxis.begin(), yAxis.end()));
+
+        } else {
+            return false;
+        }
+
+        return true;
+    }
+    return false;
+}
+
 void MainWindow::on_actionFFT_result_triggered()
 {
     lastFunction = FFT_float;
     filePath = QFileDialog::getOpenFileName(this, tr("Выберите FFT спектрограмму для отображения"), \
                                             QApplication::applicationDirPath(), \
-                                            tr("Binary files (*.bin *.dat)"));
+                                            tr("Binary files (*.*)"));
 
     if (replotFFT())
         this->addIfNotExist(filePath, lastFunction);
@@ -323,7 +626,7 @@ void MainWindow::on_actionRaw_data_triggered()
     lastFunction = RAW_iIQ_t;
     filePath = QFileDialog::getOpenFileName(this, tr("Выберите i_IQ осциллограмму для отображения"), \
                                             QApplication::applicationDirPath(), \
-                                            tr("Binary files (*.bin *.dat)"));
+                                            tr("Binary files (*.*)"));
 
     if (replotRAW())
         this->addIfNotExist(filePath, lastFunction);
@@ -335,7 +638,7 @@ void MainWindow::on_actionRaw_quad_triggered()
 
     filePath = QFileDialog::getOpenFileName(this, tr("Выберите Qi_IQ осцилограмму для отображения"), \
                                             QApplication::applicationDirPath(), \
-                                            tr("Binary files (*.bin *.dat)"));
+                                            tr("Binary files (*.*)"));
 
     if (replotQRAW())
         this->addIfNotExist(filePath, lastFunction);
@@ -346,8 +649,8 @@ void MainWindow::on_actionFloat_discretes_triggered()
     lastFunction = RAW_float;
 
     filePath = QFileDialog::getOpenFileName(this, tr("Выберите float осциллограмму для отображения"), \
-                                                QApplication::applicationDirPath(), \
-                                                tr("Binary files (*.bin *.dat)"));
+                                            QApplication::applicationDirPath(), \
+                                            tr("Binary files (*.*)"));
 
     if (replotRawFloat())
         this->addIfNotExist(filePath, lastFunction);
@@ -359,10 +662,58 @@ void MainWindow::on_actionDouble_discretes_triggered()
     lastFunction = RAW_double;
 
     filePath = QFileDialog::getOpenFileName(this, tr("Выберите double осциллограмму для отображения"), \
-                                                QApplication::applicationDirPath(), \
-                                                tr("Binary files (*.bin *.dat)"));
+                                            QApplication::applicationDirPath(), \
+                                            tr("Binary files (*.*)"));
 
     if (replotRawDouble())
+        this->addIfNotExist(filePath, lastFunction);
+}
+
+
+void MainWindow::on_actionFloat_raw_IQ_triggered()
+{
+    lastFunction = RAW_float_iIQ;
+
+    filePath = QFileDialog::getOpenFileName(this, tr("Выберите double осциллограмму для отображения"), \
+                                            QApplication::applicationDirPath(), \
+                                            tr("Binary files (*.frw_iq)"));
+
+    if (replotRawFPlusIQ())
+        this->addIfNotExist(filePath, lastFunction);
+}
+
+void MainWindow::on_actionFloat_IQ_triggered()
+{
+    lastFunction = RAW_fIQ_t;
+
+    filePath = QFileDialog::getOpenFileName(this, tr("Выберите float_IQ осциллограмму для отображения"), \
+                                            QApplication::applicationDirPath(), \
+                                            tr("Binary files (*.*)"));
+
+    if (replotRawFloatIQ())
+        this->addIfNotExist(filePath, lastFunction);
+}
+
+void MainWindow::on_actionSource_Diff_fIQ_t_triggered()
+{
+    lastFunction = SOURCE_DIFF_t;
+
+    filePath = QFileDialog::getOpenFileName(this, tr("Выберите float_IQ осциллограмму для отображения"), \
+                                            QApplication::applicationDirPath(), \
+                                            tr("Binary files (*.*)"));
+
+    if (replotSourceDirIQ())
+        this->addIfNotExist(filePath, lastFunction);
+}
+
+void MainWindow::on_actionPrint_uint_triggered()
+{
+    lastFunction = RAW_uint32_t;
+    filePath = QFileDialog::getOpenFileName(this, tr("Выберите осциллограмму"), \
+                                            QApplication::applicationDirPath(), \
+                                            tr("Binary files (*.*)"));
+
+    if (replotUInt32())
         this->addIfNotExist(filePath, lastFunction);
 }
 
@@ -444,6 +795,18 @@ void MainWindow::addIfNotExist(QString path, int mode)
         case RAW_double:
             this->ui->listWidget->addItem("[DOUBLE]" + path);
             break;
+        case RAW_float_iIQ:
+            this->ui->listWidget->addItem("[FLOAT+IQ]" + path);
+            break;
+        case RAW_fIQ_t:
+            this->ui->listWidget->addItem("[FRAW]" + path);
+            break;
+        case SOURCE_DIFF_t:
+            this->ui->listWidget->addItem("[SOURCE_DIFF_t]" + path);
+            break;
+        case RAW_uint32_t:
+            this->ui->listWidget->addItem("[SOURCE_DIFF_t]" + path);
+            break;
         default:
             break;
         }
@@ -481,4 +844,3 @@ void MainWindow::on_pushButton_3_clicked()
                 (scrollVertical ? Qt::Vertical : Qt::Orientations(0)) | \
                 (scrollHorizontal ? Qt::Horizontal : Qt::Orientations(0)));
 }
-

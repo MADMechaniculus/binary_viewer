@@ -9,11 +9,14 @@
 #include <QPushButton>
 #include <QListWidget>
 #include <QList>
+#include <QMetaType>
 
 #include <fstream>
 #include <iostream>
+#include <thread>
+#include <atomic>
 
-//#include "consolewindow.h"
+#include "addnewgraphdialog.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -41,12 +44,20 @@ class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
+    AddNewGraphDialog * newGraphDialog;
+
+    bool fftReplotter = false;
+
     enum MainWindow_PlotModes_ : int {
         FFT_float,
         RAW_iIQ_t,
+        RAW_fIQ_t,
         RAW_qiIQ_t,
         RAW_float,
-        RAW_double
+        RAW_double,
+        RAW_float_iIQ,
+        SOURCE_DIFF_t,
+        RAW_uint32_t,
     };
 
     bool sizingHorizontal{true};
@@ -57,8 +68,7 @@ class MainWindow : public QMainWindow
 
     QString filePath;
     int lastFunction{0};
-
-//    ConsoleWindow * console;
+    //    ConsoleWindow * console;
 
 public:
     MainWindow(QWidget *parent = nullptr);
@@ -74,8 +84,13 @@ signals:
 protected:
     bool replotRawFloat();
     bool replotRawDouble();
+    bool replotRawFPlusIQ();
+    bool replotRawFloatIQ();
+    bool replotSourceDirIQ();
+    bool replotUInt32();
 protected slots:
     bool replotQRAW();
+    void replotFFTslot(QVector<uint32_t> fft);
 private slots:
     void on_actionFFT_result_triggered();
 
@@ -100,6 +115,14 @@ private slots:
     void on_actionFloat_discretes_triggered();
 
     void on_actionDouble_discretes_triggered();
+
+    void on_actionFloat_raw_IQ_triggered();
+
+    void on_actionFloat_IQ_triggered();
+
+    void on_actionSource_Diff_fIQ_t_triggered();
+
+    void on_actionPrint_uint_triggered();
 
 private:
     void updateIndicators(void);

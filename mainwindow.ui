@@ -20,7 +20,7 @@
    <string>Визуализация</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="resources.qrc">
+   <iconset>
     <normaloff>:/icons/audio.png</normaloff>:/icons/audio.png</iconset>
   </property>
   <widget class="QWidget" name="centralwidget">
@@ -205,7 +205,14 @@ sizing</string>
        </layout>
       </item>
       <item>
-       <widget class="QCustomPlot" name="plotter" native="true"/>
+       <widget class="QCustomPlot" name="plotter" native="true">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>450</height>
+         </size>
+        </property>
+       </widget>
       </item>
      </layout>
     </item>
@@ -246,6 +253,10 @@ sizing</string>
      <addaction name="actionRaw_quad"/>
      <addaction name="actionFloat_discretes"/>
      <addaction name="actionDouble_discretes"/>
+     <addaction name="actionFloat_raw_IQ"/>
+     <addaction name="actionFloat_IQ"/>
+     <addaction name="actionSource_Diff_fIQ_t"/>
+     <addaction name="actionPrint_uint"/>
     </widget>
     <addaction name="menu_2"/>
     <addaction name="actionFullscreen"/>
@@ -293,6 +304,26 @@ sizing</string>
     <string>Double discretes</string>
    </property>
   </action>
+  <action name="actionFloat_raw_IQ">
+   <property name="text">
+    <string>Float raw+IQ</string>
+   </property>
+  </action>
+  <action name="actionFloat_IQ">
+   <property name="text">
+    <string>Float IQ</string>
+   </property>
+  </action>
+  <action name="actionSource_Diff_fIQ_t">
+   <property name="text">
+    <string>Source + Diff (fIQ_t)</string>
+   </property>
+  </action>
+  <action name="actionPrint_uint">
+   <property name="text">
+    <string>Print uint</string>
+   </property>
+  </action>
  </widget>
  <customwidgets>
   <customwidget>
@@ -302,8 +333,6 @@ sizing</string>
    <container>1</container>
   </customwidget>
  </customwidgets>
- <resources>
-  <include location="resources.qrc"/>
- </resources>
+ <resources/>
  <connections/>
 </ui>
